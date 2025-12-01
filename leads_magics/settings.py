@@ -84,19 +84,19 @@ DATABASES = {
     }
 }
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': config('SALESMAGICS_DB_NAME'),
-        'USER': config('SALESMAGICS_DB_USER'),
-        'PASSWORD': config('SALESMAGICS_DB_PASSWORD'),
-        'HOST': config('SALESMAGICS_DB_HOST'),
-        'PORT': config('SALESMAGICS_DB_PORT'),
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        }
-    }
-}
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': config('SALESMAGICS_DB_NAME'),
+#         'USER': config('SALESMAGICS_DB_USER'),
+#         'PASSWORD': config('SALESMAGICS_DB_PASSWORD'),
+#         'HOST': config('SALESMAGICS_DB_HOST'),
+#         'PORT': config('SALESMAGICS_DB_PORT'),
+#         'OPTIONS': {
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+#         }
+#     }
+# }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

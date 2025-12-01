@@ -1,6 +1,13 @@
-from django.urls import path
+# urls.py
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import CompanyViewSet, ClientViewSet, ListViewSet
+
+router = DefaultRouter()
+router.register(r'companies', CompanyViewSet)
+router.register(r'clients', ClientViewSet)
+router.register(r'lists', ListViewSet)
 
 urlpatterns = [
-    
-    
+    path('api/', include(router.urls)),
 ]
