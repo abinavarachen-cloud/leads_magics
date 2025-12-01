@@ -1,0 +1,28 @@
+
+# DO NOT IGNORE Django migrations
+# Only ignore auto-generated temp migration files
+migrations/**/.*~
+migrations/**/tmp_*.py
+migrations/**/__pycache__/
+
+# Environment files
+.env
+.venv
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+*/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+
+# IDE files
+.DS_Store
+.idea/
+.vscode/
+*.logs
+logs/
+*.sqlite3
