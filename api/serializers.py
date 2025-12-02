@@ -53,7 +53,7 @@ class ListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = List
-        fields = ['id', 'name', 'folder', 'description', 'count', 'client_ids', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'folder', 'count', 'client_ids', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at', 'count']
     
     def to_representation(self, instance):

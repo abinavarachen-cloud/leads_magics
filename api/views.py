@@ -21,9 +21,8 @@ class ClientViewSet(viewsets.ModelViewSet):
     # 2. GET SINGLE - GET /api/clients/{id}/
     # 3. EDIT - PUT/PATCH /api/clients/{id}/
     # 4. DELETE - DELETE /api/clients/{id}/
-    # All above are already implemented by ModelViewSet
     
-    # 5. LIST WITH ALL FILTERS - GET /api/clients/
+
     def list(self, request):
         """List clients with ALL filters in one endpoint"""
         queryset = Client.objects.all()
@@ -34,8 +33,18 @@ class ClientViewSet(viewsets.ModelViewSet):
         # Build filter conditions
         filters = Q()
         
-        # Search across multiple fields
-        if search := params.get('search'):
+        query = params.get('q', '').strip()
+        search = params.get('search', '').strip()
+        
+        if query:  # Simple search using 'q'
+            filters &= (
+                Q(client__icontains=query) |
+                Q(email__icontains=query) |
+                Q(phone__icontains=query) |
+                Q(job_role__icontains=query)
+            )
+        
+        if search:  # Advanced search using 'search'
             filters &= (
                 Q(client__icontains=search) |
                 Q(email__icontains=search) |
@@ -93,58 +102,88 @@ class ClientViewSet(viewsets.ModelViewSet):
         serializer = ClientSerializer(queryset, many=True)
         return Response({
             'count': queryset.count(),
-            'results': serializer.data
+            'results': serializer.data,
+            'filters_applied': {
+                'q': query,
+                'role': params.get('role'),
+                'location': params.get('location'),
+                'company': params.get('company'),
+                'status': params.get('status'),
+                'remarks': params.get('remarks'),
+                'lead_owner': params.get('lead_owner'),
+                'nurturing_stage': params.get('nurturing_stage'),
+                'platform': params.get('platform')
+            }
         })
-    
-    # 6. CREATE DUPLICATE
+
+
+
     @action(detail=True, methods=['POST'])
     def duplicate(self, request, pk=None):
         """Create duplicate of a client - POST /api/clients/{id}/duplicate/"""
         original = self.get_object()
         
-        # Create copy of all data
-        client_data = ClientSerializer(original).data
-        
-        # Remove ID and timestamps
-        client_data.pop('id', None)
-        client_data.pop('created_at', None)
-        client_data.pop('updated_at', None)
-        
-        # Add duplication note in remarks
-        remarks = client_data.get('remarks', '')
-        client_data['remarks'] = f"Duplicated from: {original.client}\n{remarks}"
-        
-        # Create new client
-        serializer = ClientSerializer(data=client_data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    # 7. SEARCH PEOPLE
-    @action(detail=False, methods=['GET'])
-    def search_people(self, request):
-        """Search people - GET /api/clients/search_people/?q=search_term"""
-        query = request.query_params.get('q', '').strip()
-        
-        if not query:
-            return Response({'error': 'Search query (q) is required'}, status=400)
-        
-        results = Client.objects.filter(
-            Q(client__icontains=query) |
-            Q(email__icontains=query) |
-            Q(phone__icontains=query) |
-            Q(job_role__icontains=query)
+        # Create duplicate directly using the ORM
+        duplicate = Client.objects.create(
+            company=original.company,
+            client=original.client,
+            job_role=original.job_role,
+            phone=original.phone,
+            email=original.email,
+            social_media=original.social_media.copy() if original.social_media else {},
+            media_url=original.media_url.copy() if original.media_url else {},
+            status=original.status,
+            lead_owner=original.lead_owner,
+            nurturing_stage=original.nurturing_stage,
+            remarks=f"Duplicated from: {original.client}\n{original.remarks or ''}"
         )
         
-        serializer = ClientSerializer(results, many=True)
-        return Response({
-            'search_query': query,
-            'count': results.count(),
-            'results': serializer.data
-        })
+        # Return the duplicated client
+        serializer = ClientSerializer(duplicate)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 # ========== LIST API ==========
 class ListViewSet(viewsets.ModelViewSet):
+    """List API with client operations"""
     queryset = List.objects.all()
     serializer_class = ListSerializer
+    
+    # 1. ADD CLIENTS TO LIST
+    @action(detail=True, methods=['POST'])
+    def add_clients(self, request, pk=None):
+        """Add clients to list"""
+        list_obj = self.get_object()
+        client_ids = request.data.get('client_ids', [])
+        
+        if not client_ids:
+            return Response({'error': 'client_ids required'}, status=400)
+        
+        clients = Client.objects.filter(id__in=client_ids)
+        list_obj.clients.add(*clients)
+        list_obj.refresh_from_db()
+        
+        return Response({
+            'message': f'Added {clients.count()} clients to list',
+            'list': ListSerializer(list_obj).data
+        })
+    
+    # 2. REMOVE CLIENTS FROM LIST
+    @action(detail=True, methods=['POST'])
+    def remove_clients(self, request, pk=None):
+        """Remove clients from list"""
+        list_obj = self.get_object()
+        client_ids = request.data.get('client_ids', [])
+        
+        if not client_ids:
+            return Response({'error': 'client_ids required'}, status=400)
+        
+        list_obj.clients.remove(*client_ids)
+        list_obj.refresh_from_db()
+        
+        return Response({
+            'message': f'Removed clients from list',
+            'list': ListSerializer(list_obj).data
+        })
+    
+  
