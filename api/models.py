@@ -40,7 +40,6 @@ class Client(models.Model):
     phone = models.CharField(max_length=15, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     social_media = models.JSONField(null=True, blank=True, default=dict)
-    media_url = models.JSONField(null=True, blank=True, default=dict)
     status = models.CharField(max_length=50, null=True, blank=True)
     remarks = models.TextField(null=True, blank=True)
     lead_owner = models.CharField(max_length=100, null=True, blank=True)
