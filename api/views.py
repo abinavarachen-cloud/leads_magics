@@ -148,7 +148,87 @@ class ListViewSet(viewsets.ModelViewSet):
     """List API with client operations"""
     queryset = List.objects.all()
     serializer_class = ListSerializer
+
+    def get_queryset(self):
+        """Filter lists by folder and search"""
+        queryset = List.objects.all()
+        params = self.request.query_params
+        
+        # Filter by folder
+        if folder := params.get('folder'):
+            queryset = queryset.filter(folder__icontains=folder)
+        
+        # Search by list name or ID using 'q' parameter
+        if search_query := params.get('q', '').strip():
+            try:
+                list_id = int(search_query)
+                queryset = queryset.filter(
+                    Q(id=list_id) |
+                    Q(name__icontains=search_query)
+                )
+            except ValueError:
+                queryset = queryset.filter(name__icontains=search_query)
+        
+        # Also support direct name search
+        if name := params.get('name'):
+            queryset = queryset.filter(name__icontains=name)
+        
+        # Order by latest first
+        return queryset.order_by('-created_at')
     
+    
+    @action(detail=True, methods=['GET'])
+    def get_clients(self, request, pk=None):
+        """
+        Get clients from a list with filtering options.
+        """
+        list_obj = self.get_object()
+        clients = list_obj.clients.all()
+        
+        # Apply filters (same logic as in retrieve method above)
+        params = request.query_params
+        
+        if role := params.get('role'):
+            clients = clients.filter(job_role__icontains=role)
+        
+        if location := params.get('location'):
+            clients = clients.filter(company__location__icontains=location)
+        
+        if company := params.get('company'):
+            clients = clients.filter(company__company_name__icontains=company)
+        
+        if media := params.get('media'):
+            clients = clients.filter(social_media__icontains=media)
+        
+        if lead_owner := params.get('lead_owner'):
+            clients = clients.filter(lead_owner__icontains=lead_owner)
+
+        print(f"DEBUG: query_params = {request.query_params}")
+
+        
+        # Add pagination
+        page = self.paginate_queryset(clients)
+        if page is not None:
+            serializer = ClientSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = ClientSerializer(clients, many=True)
+        return Response({
+            'list_id': list_obj.id,
+            'list_name': list_obj.name,
+            'total_clients': list_obj.count,
+            'filtered_count': clients.count(),
+            'applied_filters': {
+                'role': params.get('role'),
+                'location': params.get('location'),
+                'company': params.get('company'),
+                'media': params.get('media'),
+                'lead_owner': params.get('lead_owner')
+            },
+            'clients': serializer.data
+        })
+
+
     # 1. ADD CLIENTS TO LIST
     @action(detail=True, methods=['POST'])
     def add_clients(self, request, pk=None):
@@ -186,4 +266,66 @@ class ListViewSet(viewsets.ModelViewSet):
             'list': ListSerializer(list_obj).data
         })
     
-  
+
+    @action(detail=True, methods=['POST'])
+    def duplicate(self, request, pk=None):
+        """Duplicate a list with its clients"""
+        original = self.get_object()
+        
+        new_name = request.data.get('name', '').strip()
+        
+        if not new_name:
+            new_name = f"{original.name} (Copy)"
+        
+        # Create the duplicate list
+        duplicate = List.objects.create(
+            name=new_name,
+            folder=original.folder
+        )
+        
+        # Copy all clients from original to duplicate
+        original_clients = original.clients.all()
+        duplicate.clients.add(*original_clients)
+        
+        serializer = ListSerializer(duplicate)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+
+    @action(detail=True, methods=['POST'])
+    def move(self, request, pk=None):
+        """Merge clients from one list to another"""
+        source_list = self.get_object()
+        target_list_id = request.data.get('target_list_id')
+        
+        if not target_list_id:
+            return Response({'error': 'target_list_id required'}, status=400)
+        
+        try:
+            target_list = List.objects.get(id=target_list_id)
+        except List.DoesNotExist:
+            return Response({'error': 'Target list not found'}, status=404)
+        
+        # Don't allow copying to same list
+        if source_list.id == target_list.id:
+            return Response({'error': 'Cannot copy to same list'}, status=400)
+        
+        # Count before merge
+        before_count = target_list.clients.count()
+        
+        # Merge clients (add() ignores duplicates)
+        source_clients = source_list.clients.all()
+        target_list.clients.add(*source_clients)
+        
+        # Count after merge
+        target_list.refresh_from_db()
+        after_count = target_list.clients.count()
+        
+        added = after_count - before_count
+        
+        return Response({
+            'success': True,
+            'message': f'Added {added} clients to {target_list.name}',
+            'added_count': added,
+            'source_list': source_list.name,
+            'target_list': target_list.name
+        })

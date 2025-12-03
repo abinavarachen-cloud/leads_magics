@@ -9,5 +9,5 @@ router.register(r'clients', ClientViewSet)
 router.register(r'lists', ListViewSet)
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 ]
