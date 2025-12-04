@@ -3,9 +3,11 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-
-from .models import Company, Client, List
-from .serializers import CompanySerializer, ClientSerializer, ListSerializer
+import csv
+from django.http import HttpResponse
+from rest_framework.decorators import action
+from .models import *
+from .serializers import *
 
 # ========== COMPANY API ==========
 class CompanyViewSet(viewsets.ModelViewSet):
@@ -153,7 +155,12 @@ class ListViewSet(viewsets.ModelViewSet):
         
         # Filter by folder
         if folder := params.get('folder'):
-            queryset = queryset.filter(folder__icontains=folder)
+            try:
+                folder_id = int(folder)
+                queryset = queryset.filter(folder_id=folder_id)
+            except ValueError:
+                # Or if you want to filter by folder name:
+                queryset = queryset.filter(folder__name__icontains=folder)
         
         # Search by list name or ID using 'q' parameter
         if search_query := params.get('q', '').strip():
@@ -173,55 +180,55 @@ class ListViewSet(viewsets.ModelViewSet):
         # Order by latest first
         return queryset.order_by('-created_at')
     
-    
+
     @action(detail=True, methods=['GET'])
     def get_clients(self, request, pk=None):
-        """
-        Get clients from a list with filtering options.
-        """
         list_obj = self.get_object()
-        clients = list_obj.clients.all()
+        clients = list_obj.clients.all().select_related('company').prefetch_related('tags')
         
-        # Apply filters (same logic as in retrieve method above)
-        params = request.query_params
+        # Create filter mapping for cleaner code
+        filter_mapping = {
+            'role': 'job_role__icontains',
+            'location': 'company__location__icontains',
+            'company': 'company__company_name__icontains',
+            'media': 'social_media__icontains',
+            'lead_owner': 'lead_owner__icontains',
+            'status': 'status__icontains',
+            'industry': 'company__industry__icontains',
+        }
         
-        if role := params.get('role'):
-            clients = clients.filter(job_role__icontains=role)
+        # Apply all filters dynamically
+        for param, field_lookup in filter_mapping.items():
+            if value := request.query_params.get(param):
+                if '__' in field_lookup:
+                    # Handle related field lookups
+                    clients = clients.filter(**{field_lookup: value})
+                else:
+                    clients = clients.filter(**{field_lookup: value})
         
-        if location := params.get('location'):
-            clients = clients.filter(company__location__icontains=location)
+        # Add ordering
+        order_by = request.query_params.get('order_by', 'id')
+        if order_by.lstrip('-') in ['name', 'email', 'job_role', 'company_name']:
+            clients = clients.order_by(order_by)
         
-        if company := params.get('company'):
-            clients = clients.filter(company__company_name__icontains=company)
-        
-        if media := params.get('media'):
-            clients = clients.filter(social_media__icontains=media)
-        
-        if lead_owner := params.get('lead_owner'):
-            clients = clients.filter(lead_owner__icontains=lead_owner)
-
-        print(f"DEBUG: query_params = {request.query_params}")
-
-        
-        # Add pagination
+        # Pagination
         page = self.paginate_queryset(clients)
         if page is not None:
-            serializer = ClientSerializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            serializer = ClientSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response({
+                'list_id': list_obj.id,
+                'list_name': list_obj.name,
+                'total_clients': list_obj.count,
+                'applied_filters': {k: v for k, v in request.query_params.items() if k in filter_mapping},
+                'clients': serializer.data
+            })
         
-        serializer = ClientSerializer(clients, many=True)
+        serializer = ClientSerializer(clients, many=True, context={'request': request})
         return Response({
             'list_id': list_obj.id,
             'list_name': list_obj.name,
             'total_clients': list_obj.count,
             'filtered_count': clients.count(),
-            'applied_filters': {
-                'role': params.get('role'),
-                'location': params.get('location'),
-                'company': params.get('company'),
-                'media': params.get('media'),
-                'lead_owner': params.get('lead_owner')
-            },
             'clients': serializer.data
         })
 
@@ -326,3 +333,35 @@ class ListViewSet(viewsets.ModelViewSet):
             'source_list': source_list.name,
             'target_list': target_list.name
         })
+
+
+    @action(detail=True, methods=['GET'])
+    def export_clients(self, request, pk=None):
+        """Export list clients to CSV"""
+        list_obj = self.get_object()
+        clients = list_obj.clients.all().select_related('company')
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{list_obj.name}_clients.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['Name', 'Email', 'Job Role', 'Company', 'Location', 'Phone', 'Social Media'])
+        
+        for client in clients:
+            writer.writerow([
+                client.name,
+                client.email,
+                client.job_role,
+                client.company.company_name if client.company else '',
+                client.company.location if client.company else '',
+                client.phone,
+                client.social_media
+            ])
+        
+        return response
+
+
+class FolderViewSet(viewsets.ModelViewSet):
+    queryset = Folder.objects.all()
+    serializer_class = FolderSerializer
+
