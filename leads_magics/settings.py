@@ -12,27 +12,19 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 from decouple import config
+from decouple import Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# SECRET_KEY = 'django-insecure-#p)i=zpxx4v$lgc*oj^#hh89pz$djv(n7nawd2zwy_gk5=e-9b'
+SECRET_KEY = config("SECRET_KEY")
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-#p)i=zpxx4v$lgc*oj^#hh89pz$djv(n7nawd2zwy_gk5=e-9b'
+DEBUG = config("DEBUG", default=False, cast=bool)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
 
-ALLOWED_HOSTS = []
-
-# print("DATABASE SETTINGS")
-# print(os.getenv('SALESMAGICS_DB_NAME'))
-# print(os.getenv('SALESMAGICS_DB_USER'))
-
-# Application definition
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -41,6 +33,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # custom apps
     'api'
 ]
 
@@ -73,9 +67,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'leads_magics.wsgi.application'
 
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
