@@ -53,7 +53,7 @@ class ClientViewSet(viewsets.ModelViewSet):
                 Q(status__icontains=search) |
                 Q(remarks__icontains=search) |
                 Q(lead_owner__icontains=search) |
-                Q(company__company_name__icontains=search)
+                Q(company__company_name__icontains=search) 
             )
         
         # Filter by role
@@ -62,10 +62,8 @@ class ClientViewSet(viewsets.ModelViewSet):
         
         # Filter by location (client location or company location)
         if location := params.get('location'):
-            filters &= (
-                Q(company__location__icontains=location) |
-                Q(location__icontains=location)
-            )
+            filters &= Q(company__location__icontains=location)
+
         
         # Filter by company name
         if company := params.get('company'):
@@ -92,7 +90,7 @@ class ClientViewSet(viewsets.ModelViewSet):
             filters &= ~Q(social_media__isnull=True) & ~Q(social_media={})
         
         # Filter by specific social media platform
-        if platform := params.get('platform'):
+        if platform := params.get('social_media'):
             filters &= Q(social_media__has_key=platform)
         
         # Apply all filters at once
@@ -131,7 +129,6 @@ class ClientViewSet(viewsets.ModelViewSet):
             phone=original.phone,
             email=original.email,
             social_media=original.social_media.copy() if original.social_media else {},
-            media_url=original.media_url.copy() if original.media_url else {},
             status=original.status,
             lead_owner=original.lead_owner,
             nurturing_stage=original.nurturing_stage,
