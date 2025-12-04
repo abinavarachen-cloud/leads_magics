@@ -23,12 +23,28 @@ from .views import (
 )
 
 urlpatterns = [
+    path('', include(router.urls)),
+    
+    # Email Template Categories
+    path('template-categories/', EmailTemplateCategoryListCreateView.as_view()),
+    path('template-categories/<int:pk>/', EmailTemplateCategoryDetailView.as_view()),
+    
+    # Email Templates
+    path('templates/', EmailTemplateListCreateView.as_view()),
+    path('templates/<int:pk>/', EmailTemplateDetailView.as_view()),
+    path('templates/preview/', TemplatePreviewView.as_view()),
+    
+    # Campaigns - Unified Action View
     path('campaigns/', CampaignListCreateView.as_view()),
+    path('campaigns/action/', CampaignActionView.as_view()),  # NEW: Create + Action
     path('campaigns/<int:pk>/', CampaignDetailView.as_view()),
-
-    # actions
-    path('campaigns/<int:pk>/add-test-email/', CampaignSendTestView.as_view()),
+    path('campaigns/<int:pk>/action/', CampaignActionView.as_view()),  # NEW: Update + Action
     path('campaigns/<int:pk>/generate-recipients/', CampaignGenerateRecipientsView.as_view()),
-    path('campaigns/<int:pk>/send-now/', CampaignSendNowView.as_view()),
-    path('campaigns/<int:pk>/schedule/', CampaignScheduleView.as_view()),
+    path('campaigns/<int:pk>/preview/', EmailPreviewView.as_view()),
+    path('campaigns/preview/', EmailPreviewView.as_view()),
+    
+    # Tracking
+    path('track/open/<uuid:tracking_id>/', track_email_open, name='track_email_open'),
+    path('track/click/<uuid:tracking_id>/', track_link_click, name='track_link_click'),
+    path('unsubscribe/<uuid:tracking_id>/', unsubscribe, name='unsubscribe'),
 ]
