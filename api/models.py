@@ -70,9 +70,29 @@ class Client(models.Model):
     def __str__(self):
         return self.client or f"Client {self.id}"
 
+
+class Folder(models.Model):
+    name = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']   
+        verbose_name = "Folder"
+        verbose_name_plural = "Folders"
+
+    def __str__(self):
+        return self.name
+    
 class List(models.Model):
     name = models.CharField(max_length=100)
-    folder = models.CharField(max_length=100, null=True, blank=True)
+    folder = models.ForeignKey(
+        Folder,
+        related_name='lists',
+        on_delete=models.SET_NULL,  # or CASCADE if you want lists deleted with folder
+        null=True,
+        blank=True
+    )
     clients = models.ManyToManyField(Client, related_name='lists', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

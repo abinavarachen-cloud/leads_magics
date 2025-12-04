@@ -1,6 +1,6 @@
 # serializers.py
 from rest_framework import serializers
-from .models import Company, Client, List
+from .models import *
 
 class CompanySerializer(serializers.ModelSerializer):
     client_count = serializers.SerializerMethodField()
@@ -61,3 +61,7 @@ class ListSerializer(serializers.ModelSerializer):
         representation['clients'] = ClientSerializer(instance.clients.all(), many=True).data
         return representation
 
+class FolderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Folder
+        fields = '__all__'
