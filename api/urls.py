@@ -17,9 +17,9 @@ from .views import (
     CampaignListCreateView,
     CampaignDetailView,
     CampaignGenerateRecipientsView,
-    CampaignSendTestView,
-    CampaignSendNowView,
-    CampaignScheduleView,
+    # CampaignSendTestView,
+    # CampaignSendNowView,
+    # CampaignScheduleView,
 )
 
 urlpatterns = [
