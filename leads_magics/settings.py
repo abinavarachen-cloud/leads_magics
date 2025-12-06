@@ -109,6 +109,9 @@ DATABASES = {
 #     }
 # }
 
+AUTH_USER_MODEL = "api.CustomUser"
+
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
@@ -117,6 +120,14 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+}
+
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Asia/Kolkata"  # Set to your timezone
