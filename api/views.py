@@ -184,7 +184,7 @@ class ListViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['GET'])
     def get_clients(self, request, pk=None):
         list_obj = self.get_object()
-        clients = list_obj.clients.all().select_related('company').prefetch_related('tags')
+        clients = list_obj.clients.all().select_related('company')
         
         # Create filter mapping for cleaner code
         filter_mapping = {

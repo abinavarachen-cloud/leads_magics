@@ -35,7 +35,9 @@ class ClientSerializer(serializers.ModelSerializer):
                 'id': instance.company.id,
                 'company_name': instance.company.company_name,
                 'location': instance.company.location,
-                'industry': instance.company.industry
+                'industry': instance.company.industry,
+                'domain': instance.company.domain,
+                'company_email': instance.company.company_email
             }
         else:
             representation['company'] = None

@@ -32,6 +32,7 @@ class Client(models.Model):
         ('cold', 'Cold - Not Interested'),
     ]
     STATUS_CHOICES = [
+        ('new', 'New'),
         ('lost', 'Lost'),
         ('won', 'Won'),
     ]
@@ -55,7 +56,8 @@ class Client(models.Model):
         max_length=50,
         choices=STATUS_CHOICES,
         null=True,
-        blank=True
+        blank=True,
+        default='new'
     )
     remarks = models.TextField(null=True, blank=True)
     lead_owner = models.CharField(max_length=100, null=True, blank=True)
