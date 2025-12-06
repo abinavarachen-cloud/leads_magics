@@ -370,6 +370,7 @@ class FolderViewSet(viewsets.ModelViewSet):
     queryset = Folder.objects.all()
     serializer_class = FolderSerializer
 
+
 from rest_framework import generics, status
 from rest_framework import viewsets, status, generics, filters
 from django_filters.rest_framework import DjangoFilterBackend
@@ -396,24 +397,18 @@ from .tasks import *
 
 
 # ========== EMAIL TEMPLATES & CATEGORIES ==========
-class EmailTemplateCategoryListCreateView(generics.ListCreateAPIView):
-    queryset = EmailTemplateCategory.objects.all()
-    serializer_class = EmailTemplateCategorySerializer
+
+class TemplateListCreateView(generics.ListCreateAPIView):
+    queryset = Template.objects.all()
+    serializer_class = TemplateSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['status']
+    search_fields = ['name']
 
 
-class EmailTemplateCategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = EmailTemplateCategory.objects.all()
-    serializer_class = EmailTemplateCategorySerializer
-
-
-class EmailTemplateListCreateView(generics.ListCreateAPIView):
-    queryset = EmailTemplate.objects.all()
-    serializer_class = EmailTemplateSerializer
-
-
-class EmailTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = EmailTemplate.objects.all()
-    serializer_class = EmailTemplateSerializer
+class TemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Template.objects.all()
+    serializer_class = TemplateSerializer
 
 
 # ========== EMAIL CAMPAIGNS ==========
@@ -515,10 +510,14 @@ class CampaignDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
 
+
+from django.template.loader import render_to_string
+from django.template import Template, Context
+import re
+
 class CampaignActionView(APIView):
     
     def post(self, request):
-
         action = request.data.get('action', 'save_draft')
         
         # Validate campaign data first
@@ -536,10 +535,10 @@ class CampaignActionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            # Check if contact_lists are provided for sending actions
-            if action in ['send_now', 'schedule'] and not campaign_data.get('contact_lists'):
+            # Check if sent_lists are provided for sending actions
+            if action in ['send_now', 'schedule'] and not campaign_data.get('sent_lists'):
                 return Response(
-                    {"error": "contact_lists is required for this action"}, 
+                    {"error": "sent_lists is required for sending emails"}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
@@ -624,6 +623,13 @@ class CampaignActionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Validate that campaign has content or template
+        if not campaign.get_email_content():
+            return Response(
+                {"error": "Campaign must have email content or a template to send"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         # Update test email recipients
         current = campaign.test_email_recipients or ""
         new_emails = ','.join(test_emails)
@@ -633,7 +639,6 @@ class CampaignActionView(APIView):
         
         # Send test emails
         task = send_test_emails_multiple.delay(campaign.id, test_emails)
-        # task = send_test_email.delay(campaign.id, test_emails=test_emails)
         
         return Response({
             "message": f"Test emails sent to {len(test_emails)} recipients",
@@ -662,9 +667,17 @@ class CampaignActionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not campaign.contact_lists.exists():
+        if not campaign.sent_lists.exists():
             return Response(
-                {"error": "Campaign must have at least one contact list"}, 
+                {"error": "Campaign must have at least one sent list"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate that campaign has content
+        email_content = campaign.get_email_content()
+        if not email_content:
+            return Response(
+                {"error": "Campaign must have email content to send. Either set custom_content or select a template."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -680,8 +693,8 @@ class CampaignActionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Update campaign status to "sending" (not "sent" yet)
-        campaign.status = "sending"  # ← Changed from "sent"
+        # Update campaign status to "sending"
+        campaign.status = "sending"
         campaign.sent_at = timezone.now()
         campaign.save(update_fields=["status", "sent_at", "updated_at"])
 
@@ -692,8 +705,11 @@ class CampaignActionView(APIView):
             "message": f"Campaign is being sent to {pending_recipients} recipients",
             "campaign_id": campaign.id,
             "total_recipients": pending_recipients,
-            "status": campaign.status,  # Will be "sending"
-            "sent_at": campaign.sent_at
+            "status": campaign.status,
+            "sent_at": campaign.sent_at,
+            "campaign_name": campaign.campaign_name,
+            "subject_line": campaign.get_email_subject(),
+            "template_used": campaign.template.name if campaign.template else "Custom Content"
         }, status=status.HTTP_200_OK)
     
     def _schedule(self, campaign, data):
@@ -703,9 +719,13 @@ class CampaignActionView(APIView):
         serializer.is_valid(raise_exception=True)
 
         scheduled_time = serializer.validated_data["scheduled_at"]
-
-        # Validate scheduled time
-        if scheduled_time <= timezone.now():
+        
+        # IMPORTANT: Convert to UTC for storage
+        scheduled_time_utc = scheduled_time.astimezone(pytz.UTC)
+        
+        # Validate against current UTC time
+        current_time_utc = timezone.now().astimezone(pytz.UTC)
+        if scheduled_time_utc <= current_time_utc:
             return Response(
                 {"error": "Scheduled time must be in the future"}, 
                 status=status.HTTP_400_BAD_REQUEST
@@ -718,34 +738,64 @@ class CampaignActionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not campaign.contact_lists.exists():
+        if not campaign.sent_lists.exists():
             return Response(
-                {"error": "Campaign must have at least one contact list"}, 
+                {"error": "Campaign must have at least one sent list"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Update campaign
+        # Validate that campaign has content
+        if not campaign.get_email_content():
+            return Response(
+                {"error": "Campaign must have email content to schedule"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update campaign - STORE AS UTC
         campaign.status = "scheduled"
-        campaign.scheduled_at = scheduled_time
+        campaign.scheduled_at = scheduled_time_utc  # Store UTC time
         campaign.save(update_fields=['status', 'scheduled_at', 'updated_at'])
+        
+        # Pre-generate recipients in the background
+        from .tasks import generate_recipients_for_campaign
+        generate_recipients_for_campaign.delay(campaign.id)
+        
+        # Convert to local time for display only
+        local_tz = pytz.timezone(settings.TIME_ZONE)  # Asia/Kolkata
+        local_time = scheduled_time_utc.astimezone(local_tz)
+        
+        # Calculate time until sending (in UTC)
+        time_until_send = scheduled_time_utc - current_time_utc
+        hours, remainder = divmod(time_until_send.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
 
         return Response({
-            "message": f"Campaign scheduled for {scheduled_time}",
+            "message": f"Campaign scheduled successfully",
             "campaign_id": campaign.id,
-            "scheduled_at": campaign.scheduled_at,
-            "status": campaign.status
+            "scheduled_at_utc": scheduled_time_utc.isoformat(),  # Show UTC time
+            "scheduled_at_local": local_time.isoformat(),  # Show local time
+            "scheduled_at_formatted": local_time.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            "time_until_send": {
+                "days": time_until_send.days,
+                "hours": hours,
+                "minutes": minutes
+            },
+            "status": campaign.status,
+            "campaign_name": campaign.campaign_name,
+            "template": campaign.template.name if campaign.template else "Custom",
+            "note": "Recipients are being generated in the background. Campaign will be sent automatically at the scheduled time."
         }, status=status.HTTP_200_OK)
     
     def _generate_recipients(self, campaign):
         """Helper method to generate recipients for a campaign"""
-        # Get clients from contact lists
+        # Get clients from sent lists
         included = Client.objects.filter(
-            lists__in=campaign.contact_lists.all()
+            lists__in=campaign.sent_lists.all()
         ).distinct()
 
         # Exclude clients from do-not-send lists
         excluded = Client.objects.filter(
-            lists__in=campaign.do_not_send_lists.all()
+            lists__in=campaign.do_notsent_lists.all()
         )
 
         # Final recipient list (with valid emails)
@@ -759,8 +809,9 @@ class CampaignActionView(APIView):
                 campaign=campaign,
                 contact=contact,
                 defaults={'status': 'pending'}
-            )
-
+            )    
+            
+            
 
 class CampaignGenerateRecipientsView(APIView):
     """Standalone view to preview recipients before taking action"""
@@ -938,41 +989,109 @@ class EmailPreviewView(APIView):
                 campaign = EmailCampaign.objects.get(pk=pk)
                 subject = campaign.get_email_subject()
                 html_content = campaign.get_email_content()
+                plain_text = campaign.get_plain_text_content()
             else:
                 # Preview with custom data
                 template_id = request.GET.get('template_id')
                 if template_id:
-                    template = EmailTemplate.objects.get(id=template_id)
-                    subject = template.subject or "Preview Subject"
-                    html_content = template.content or ""
+                    template = Template.objects.get(id=template_id)
+                    
+                    # Sample context for preview
+                    context = {
+                        'name': 'John Doe',
+                        'email': 'john@example.com',
+                        'company': 'Example Corp',
+                        'job_role': 'Manager',
+                    }
+                    
+                    rendered = template.render_template(context)
+                    subject = "Preview: " + template.name
+                    html_content = rendered['html_content']
+                    plain_text = rendered['plain_text_content']
                 else:
                     return Response(
-                        {"error": "Either campaign_id or template_id is required"},
+                        {"error": "Either pk or template_id is required"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            
-            # Personalize with test data
-            test_data = {
-                '{{name}}': 'Test Recipient',
-                '{{email}}': 'test@example.com',
-                '{{company}}': 'Test Company',
-                '{{job_role}}': 'Test Role',
-            }
-            
-            for placeholder, value in test_data.items():
-                subject = subject.replace(placeholder, value)
-                html_content = html_content.replace(placeholder, value)
             
             return Response({
                 'subject': subject,
                 'html_content': html_content,
-                'text_content': strip_tags(html_content)
+                'plain_text_content': plain_text
             })
             
-        except (EmailCampaign.DoesNotExist, EmailTemplate.DoesNotExist):
+        except (EmailCampaign.DoesNotExist, Template.DoesNotExist):
             return Response(
                 {"error": "Campaign or template not found"},
                 status=status.HTTP_404_NOT_FOUND
+            )      
+   
+# Add this new view to views.py
+
+class EmailPreviewHTMLView(APIView):
+    """
+    Return fully rendered HTML preview of email
+    """
+    def get(self, request, pk=None):
+        try:
+            if pk:
+                # Preview specific campaign
+                campaign = EmailCampaign.objects.get(pk=pk)
+                
+                # Get sample contact for preview
+                sample_contact = Client.objects.filter(email__isnull=False).first()
+                
+                if not sample_contact:
+                    # Create dummy contact data for preview
+                    class DummyContact:
+                        client = "John Doe"
+                        email = "john.doe@example.com"
+                        job_role = "Marketing Manager"
+                        phone = "+1234567890"
+                        class company:
+                            company_name = "Example Corp"
+                            location = "New York, USA"
+                    
+                    sample_contact = DummyContact()
+                
+                # Get email content
+                raw_html = campaign.get_email_content()
+                raw_subject = campaign.get_email_subject()
+                
+                # Personalize with sample data
+                personalized_html = personalize_content(raw_html, sample_contact, recipient=None)
+                personalized_subject = personalize_content(raw_subject, sample_contact, recipient=None)
+                
+                # Render preview template
+                preview_html = render_to_string('campaign_preview.html', {
+                    'campaign_name': campaign.campaign_name,
+                    'sender_name': campaign.sender_name or 'Your Company',
+                    'sender_email': campaign.sender_email or settings.DEFAULT_FROM_EMAIL,
+                    'recipient_email': sample_contact.email,
+                    'subject': personalized_subject,
+                    'preview_text': campaign.preview_text or '',
+                    'email_content': personalized_html,
+                    'is_test': True,
+                })
+                
+                return HttpResponse(preview_html)
+                
+            else:
+                return Response(
+                    {"error": "Campaign ID is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+        except EmailCampaign.DoesNotExist:
+            return Response(
+                {"error": "Campaign not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error generating email preview: {str(e)}")
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
             
             
@@ -989,16 +1108,257 @@ class TemplatePreviewView(APIView):
             )
         
         try:
-            template = EmailTemplate.objects.get(id=template_id)
+            template = Template.objects.get(id=template_id)
+            
+            # Prepare preview context with sample data
+            preview_context = {
+                'name': 'John Doe',
+                'email': 'john@example.com',
+                'company': 'Example Corp',
+                'job_role': 'Manager',
+            }
+            
+            # Render template with preview data
+            rendered = template.render_template(preview_context)
+            
             return Response({
                 'id': template.id,
                 'name': template.name,
-                'subject': template.subject,
-                'content': template.content,
-                'category': template.category.name if template.category else None
+                'html_content': rendered['html_content'],
+                'plain_text_content': rendered['plain_text_content'],
+                'variables': template.variables,
+                'status': template.status
             })
-        except EmailTemplate.DoesNotExist:
+        except Template.DoesNotExist:
             return Response(
                 {"error": "Template not found"},
                 status=status.HTTP_404_NOT_FOUND
+            ) 
+            
+
+# views.py - Add new views
+class EmailSendView(APIView):
+    """Send email with proper headers and tracking"""
+    
+    def post(self, request, pk=None):
+        try:
+            if pk:
+                campaign = EmailCampaign.objects.get(pk=pk)
+            else:
+                # Create new campaign from request data
+                serializer = EmailCampaignSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                campaign = serializer.save(status='draft')
+            
+            # Validate campaign
+            if not campaign.sender_email:
+                return Response(
+                    {"error": "Sender email is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Generate recipients if not already generated
+            if campaign.recipients.count() == 0:
+                self._generate_recipients(campaign)
+            
+            # Check if there are recipients with emails
+            valid_recipients = campaign.recipients.filter(
+                status='pending',
+                contact__email__isnull=False
+            ).exclude(contact__email='').count()
+            
+            if valid_recipients == 0:
+                return Response(
+                    {"error": "No valid recipients with email addresses"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Start sending process
+            campaign.status = 'sending'
+            campaign.save()
+            
+            # Queue emails for sending
+            send_campaign_emails.delay(campaign.id)
+            
+            return Response({
+                "message": f"Campaign '{campaign.campaign_name}' is being sent",
+                "campaign_id": campaign.id,
+                "total_recipients": valid_recipients,
+                "status": campaign.status,
+                "to_lists": [list.name for list in campaign.contact_lists.all()],
+                "cc_lists": [list.name for list in campaign.cc_lists.all()],
+                "bcc_lists": [list.name for list in campaign.bcc_lists.all()]
+            })
+            
+        except EmailCampaign.DoesNotExist:
+            return Response(
+                {"error": "Campaign not found"},
+                status=status.HTTP_404_NOT_FOUND
             )
+        except Exception as e:
+            logger.error(f"Error sending campaign: {str(e)}")
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _generate_recipients(self, campaign):
+        """Generate recipients from lists"""
+        from services.email_builder import EmailBuilder
+        
+        # Get all contacts from TO lists
+        to_contacts = Client.objects.filter(
+            lists__in=campaign.contact_lists.all()
+        ).distinct()
+        
+        # Get excluded contacts
+        excluded_contacts = Client.objects.filter(
+            lists__in=campaign.do_not_send_lists.all()
+        )
+        
+        # Final recipients
+        final_contacts = to_contacts.exclude(
+            id__in=excluded_contacts.values_list('id', flat=True)
+        ).exclude(
+            email__isnull=True
+        ).exclude(email='')
+        
+        # Create recipient records
+        for contact in final_contacts:
+            EmailRecipient.objects.get_or_create(
+                campaign=campaign,
+                contact=contact,
+                defaults={'status': 'pending'}
+            )
+
+
+class EmailPreviewAPIView(APIView):
+    """Preview email with actual recipient data"""
+    
+    def get(self, request, pk):
+        try:
+            campaign = EmailCampaign.objects.get(pk=pk)
+            
+            # Get a sample recipient for preview
+            recipient = campaign.recipients.filter(
+                contact__email__isnull=False
+            ).first()
+            
+            if not recipient:
+                # Create a dummy recipient for preview
+                contact = Client.objects.filter(email__isnull=False).first()
+                if not contact:
+                    return Response(
+                        {"error": "No contacts available for preview"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                recipient = EmailRecipient.objects.create(
+                    campaign=campaign,
+                    contact=contact,
+                    status='pending'
+                )
+            
+            # Build email preview
+            from services.email_builder import EmailBuilder
+            email_data = EmailBuilder.build_email(campaign, recipient)
+            
+            return Response({
+                "campaign": {
+                    "id": campaign.id,
+                    "name": campaign.campaign_name,
+                    "subject": email_data['subject'],
+                    "sender": email_data['from_email'],
+                    "reply_to": email_data['reply_to']
+                },
+                "recipient": {
+                    "to": email_data['to'],
+                    "cc": email_data['cc'],
+                    "bcc": email_data['bcc']
+                },
+                "content": {
+                    "html": email_data['html_content'],
+                    "text": email_data['plain_text_content']
+                },
+                "headers": email_data['headers']
+            })
+            
+        except EmailCampaign.DoesNotExist:
+            return Response(
+                {"error": "Campaign not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class CampaignAnalyticsView(APIView):
+    """Get campaign analytics and tracking data"""
+    
+    def get(self, request, pk):
+        try:
+            campaign = EmailCampaign.objects.get(pk=pk)
+            
+            # Get all recipients with engagement data
+            recipients = campaign.recipients.select_related('contact').all()
+            
+            analytics = {
+                "campaign_id": campaign.id,
+                "campaign_name": campaign.campaign_name,
+                "total_recipients": recipients.count(),
+                "sent": recipients.filter(status='sent').count(),
+                "pending": recipients.filter(status='pending').count(),
+                "failed": recipients.filter(status='failed').count(),
+                "opened": recipients.filter(opened_at__isnull=False).count(),
+                "clicked": recipients.filter(clicked_at__isnull=False).count(),
+                "unsubscribed": recipients.filter(unsubscribed_at__isnull=False).count(),
+                "open_rate": self._calculate_rate(
+                    recipients.filter(opened_at__isnull=False).count(),
+                    recipients.filter(status='sent').count()
+                ),
+                "click_rate": self._calculate_rate(
+                    recipients.filter(clicked_at__isnull=False).count(),
+                    recipients.filter(opened_at__isnull=False).count()
+                ),
+                "delivery_rate": self._calculate_rate(
+                    recipients.filter(status='sent').count(),
+                    recipients.count()
+                ),
+                "engagement_timeline": self._get_engagement_timeline(campaign),
+                "top_performers": self._get_top_performers(campaign)
+            }
+            
+            return Response(analytics)
+            
+        except EmailCampaign.DoesNotExist:
+            return Response(
+                {"error": "Campaign not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    def _calculate_rate(self, numerator, denominator):
+        """Calculate percentage rate"""
+        if denominator == 0:
+            return 0
+        return round((numerator / denominator) * 100, 2)
+    
+    def _get_engagement_timeline(self, campaign):
+        """Get engagement events timeline"""
+        from django.db.models import Count
+        from django.db.models.functions import TruncHour
+        
+        timeline = campaign.recipients.filter(
+            opened_at__isnull=False
+        ).annotate(
+            hour=TruncHour('opened_at')
+        ).values('hour').annotate(
+            count=Count('id')
+        ).order_by('hour')
+        
+        return list(timeline)
+    
+    def _get_top_performers(self, campaign):
+        """Get top performing email content elements"""
+        # This would require more advanced tracking
+        return []
+    
+            
+      
+            

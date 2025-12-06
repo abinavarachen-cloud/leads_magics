@@ -1,71 +1,68 @@
 import os
 from pathlib import Path
-from decouple import config
-from decouple import Csv
+from decouple import config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-#p)i=zpxx4v$lgc*oj^")
+# BASIC CONFIG
+SECRET_KEY = config("SECRET_KEY", default="unsafe-secret-key")
+
 DEBUG = config("DEBUG", default=True, cast=bool)
 
-# SECRET_KEY = 'django-insecure-#p)i=zpxx4v$lgc*oj^#hh89pz$djv(n7nawd2zwy_gk5=e-9b'
-SECRET_KEY = config("SECRET_KEY")
+ALLOWED_HOSTS = config(
+    "ALLOWED_HOSTS",
+    default="127.0.0.1,localhost",
+    cast=Csv()
+)
 
-DEBUG = config("DEBUG", default=False, cast=bool)
-
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", cast=Csv())
-
-# CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", cast=bool, default=False)
-
-# if not CORS_ALLOW_ALL_ORIGINS:
-#     CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", cast=Csv())
-
+# APPS
 INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    # third-party apps
+    # Django default
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+
+    # Third-party
     "corsheaders",
-    "drf_yasg",
     "rest_framework",
-    # custom apps
     "django_filters",
-    "django_celery_beat",  # For scheduled campaigns
+    "drf_yasg",
+    "django_celery_beat",
+
+    # Local apps
     "api",
 ]
 
+# MIDDLEWARE
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# CORS Settings (if you have a frontend)
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-]
+# CORS
 
-REST_FRAMEWORK = {
-    "DEFAULT_FILTER_BACKENDS": [
-        "django_filters.rest_framework.DjangoFilterBackend",
-        "rest_framework.filters.SearchFilter",
-        "rest_framework.filters.OrderingFilter",
-    ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 50,
-}
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default=False, cast=bool)
 
-ROOT_URLCONF = "leads_magics.urls"
+if not CORS_ALLOW_ALL_ORIGINS:
+    CORS_ALLOWED_ORIGINS = config(
+        "CORS_ALLOWED_ORIGINS",
+        cast=Csv(),
+        default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173"
+    )
+
+# URLS & TEMPLATES
+ROOT_URLCONF = 'leads_magics.urls'
 
 TEMPLATES = [
     {
@@ -85,8 +82,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "leads_magics.wsgi.application"
 
-
-# Database Configuration
+# DATABASE (DEV: SQLite)
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -94,24 +90,7 @@ DATABASES = {
     }
 }
 
-# For Production MySQL (uncomment when ready)
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': config('SALESMAGICS_DB_NAME'),
-#         'USER': config('SALESMAGICS_DB_USER'),
-#         'PASSWORD': config('SALESMAGICS_DB_PASSWORD'),
-#         'HOST': config('SALESMAGICS_DB_HOST'),
-#         'PORT': config('SALESMAGICS_DB_PORT'),
-#         'OPTIONS': {
-#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-#         }
-#     }
-# }
-
-AUTH_USER_MODEL = "api.CustomUser"
-
-
+# AUTH & LOCALIZATION
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
@@ -121,92 +100,99 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ),
-}
-
-
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = "Asia/Kolkata"  # Set to your timezone
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
+# STATIC & MEDIA
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-STATIC_URL = "/static/"
-STATIC_ROOT = os.path.join(BASE_DIR, "static")
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# REST FRAMEWORK
+REST_FRAMEWORK = {
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}
+
+TIME_ZONE = "Asia/Kolkata"
+USE_TZ = True
+
+import os
+import ssl
+from pathlib import Path
+from decouple import config, Csv
+
+# ========== SSL FIX ==========
+# Completely disable SSL verification
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# Set environment variables for SSL
+os.environ['PYTHONHTTPSVERIFY'] = '0'
+os.environ['SSL_CERT_FILE'] = ''
+os.environ['REQUESTS_CA_BUNDLE'] = ''
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  # or console/file for testing
+
+# For Development/Testing - Use these settings:
+
+# Option A: Use console backend (prints emails to console)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Option B: Use file backend (saves emails to files)
+EMAIL_BACKEND = 'api.email_backend.CustomEmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
+EMAIL_FILE_PATH = BASE_DIR / 'sent_emails'  # Directory to save emails
+
+# # For Production - Use SMTP backend
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False') == 'False'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '30'))
+EMAIL_SSL_KEYFILE = None
+EMAIL_SSL_CERTFILE = None
 
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-
-# # AWS S3 credentials
-# AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID")
-# AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY")
-# AWS_STORAGE_BUCKET_NAME = config("AWS_BUCKET_NAME")
-# AWS_S3_REGION_NAME = config("AWS_REGION", default="ap-south-1")
-# AWS_QUERYSTRING_AUTH = False  # Optional: disable signed URLs
-
-# # Static files
-# STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-# STATIC_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/static/'
-
-# # Media files
-# DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-# MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/media/'
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# EMAIL CONFIGURATION
-
-# Option 1: Gmail SMTP
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='your-email@gmail.com')
-# EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='your-app-password')
-# DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
-
-# For development/testing (console output)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-
-# Email Settings
-EMAIL_TIMEOUT = 30  # Timeout in seconds
-EMAIL_USE_LOCALTIME = True
-
-# CELERY CONFIGURATION
-
+# CELERY
 CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = config(
-    "CELERY_RESULT_BACKEND", default="redis://localhost:6379/0"
-)
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
+CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0")
+
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
+
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 
-# Celery Beat (for scheduled campaigns)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
-# Rate limiting (prevent email spam)
-CELERY_TASK_DEFAULT_RATE_LIMIT = "100/m"  # 100 emails per minute
+CELERY_TASK_DEFAULT_RATE_LIMIT = "100/m"
 
-# DOMAIN CONFIGURATION
-
+# DOMAIN
 DOMAIN = config("DOMAIN", default="http://localhost:8000")
 
-# For production
+# SECURITY (ONLY WHEN DEBUG = FALSE)
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
@@ -215,8 +201,7 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
 
-# LOGGING CONFIGURATION
-
+# LOGGING
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -253,6 +238,5 @@ LOGGING = {
     },
 }
 
-# Create logs directory if it doesn't exist
-LOGS_DIR = BASE_DIR / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
+# Ensure logs directory exists
+(LOGS_DIR := BASE_DIR / 'logs').mkdir(exist_ok=True)
