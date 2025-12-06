@@ -1,4 +1,3 @@
-# models.py
 import uuid
 import time
 from django.db import models
@@ -11,6 +10,8 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, Abstr
 from ckeditor.fields import RichTextField
 from ckeditor_uploader.fields import RichTextUploadingField
 from api.manager import CustomUserManager  # we will create this
+from django_ckeditor_5.fields import CKEditor5Field 
+
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -36,6 +37,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+import pytz
 
 
 class Company(models.Model):
@@ -112,6 +114,7 @@ class Folder(models.Model):
         return self.name
 
 
+    
 class List(models.Model):
     name = models.CharField(max_length=100)
     folder = models.ForeignKey(
@@ -137,12 +140,6 @@ class List(models.Model):
         return self.clients.count()
 
 
-class Template(models.Model):
-    pass
-
-
-class ContactList(models.Model):
-    pass
 
 
 class EmailTemplateCategory(models.Model):
@@ -177,6 +174,138 @@ class EmailTemplate(models.Model):
         return self.name
 
 
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('active', 'Active'),
+        ('archived', 'Archived'),
+    ]
+    
+    # Basic information
+    name = models.CharField(max_length=255, unique=True, help_text="Template name for identification")
+    
+    # Email content - using CKEditor5Field for rich text editing
+    html_content = CKEditor5Field(
+        config_name='extends',
+        blank=True,
+        null=True,
+        help_text="HTML content of the email"
+    )
+    
+    # Plain text fallback (optional)
+    plain_text_content = models.TextField(
+        blank=True, 
+        null=True,
+        help_text="Plain text version for email clients that don't support HTML"
+    )
+    
+    # Template status
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='draft'
+    )
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_used = models.DateTimeField(null=True, blank=True)
+    
+    # Usage tracking
+    total_sent = models.PositiveIntegerField(default=0, help_text="Total emails sent using this template")
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    
+    # Template variables documentation
+    variables = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="JSON list of available template variables e.g., ['{{name}}', '{{email}}', '{{link}}']"
+    )
+    
+    # Thumbnail/preview
+    thumbnail = models.ImageField(
+        upload_to='email_templates/thumbnails/',
+        null=True,
+        blank=True,
+        help_text="Template preview thumbnail"
+    )
+    
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = "Email Template"
+        verbose_name_plural = "Email Templates"
+        indexes = [
+            models.Index(fields=['status']),
+        ]
+    
+    def __str__(self):
+        return self.name
+    
+    def get_html_content(self):
+        """Get HTML content with fallback"""
+        if self.html_content:
+            return self.html_content
+        # Convert plain text to basic HTML if no HTML content
+        return f"<html><body><pre>{self.plain_text_content or ''}</pre></body></html>"
+    
+    def get_plain_text_content(self):
+        """Get plain text content with fallback"""
+        if self.plain_text_content:
+            return self.plain_text_content
+        
+        # If no plain text, strip HTML tags from html_content
+        import re
+        if self.html_content:
+            # Simple HTML tag removal
+            text = re.sub(r'<[^>]*>', ' ', str(self.html_content))
+            text = re.sub(r'\s+', ' ', text).strip()
+            return text
+        
+        return ""
+    
+    def save(self, *args, **kwargs):
+        # Auto-generate plain text if not provided and HTML exists
+        if self.html_content and not self.plain_text_content:
+            import re
+            text = re.sub(r'<[^>]*>', ' ', str(self.html_content))
+            text = re.sub(r'\s+', ' ', text).strip()
+            self.plain_text_content = text[:1000]  # Limit length
+        
+        super().save(*args, **kwargs)
+    
+    def render_template(self, context=None):
+        """Render template with dynamic variables"""
+        from django.template import Template, Context
+        
+        if context is None:
+            context = {}
+        
+        # Render HTML content
+        html_content = self.get_html_content()
+        html_template = Template(html_content)
+        rendered_html = html_template.render(Context(context))
+        
+        # Render plain text
+        text_content = self.get_plain_text_content()
+        if text_content:
+            text_template = Template(text_content)
+            rendered_text = text_template.render(Context(context))
+        else:
+            rendered_text = ""
+        
+        return {
+            'html_content': rendered_html,
+            'plain_text_content': rendered_text
+        }
+    
+    def increment_usage(self):
+        """Increment usage counter and update last used timestamp"""
+        self.total_sent += 1
+        self.last_used = timezone.now()
+        self.last_sent_at = timezone.now()
+        self.save(update_fields=['total_sent', 'last_used', 'last_sent_at', 'updated_at'])
+    
+    
+    
 class EmailCampaign(models.Model):
     # Campaign types
     CAMPAIGN_TYPE_CHOICES = [
@@ -204,8 +333,8 @@ class EmailCampaign(models.Model):
         max_length=50, choices=CAMPAIGN_TYPE_CHOICES, default="promotional"
     )
 
-    # Content & subject
-    subject_line = models.CharField(max_length=255, blank=True, default="No Subject")
+    # Content & subject - Make subject_line required
+    subject_line = models.CharField(max_length=255, default="No Subject")
     preview_text = models.CharField(max_length=500, blank=True)
     template = models.ForeignKey(
         "EmailTemplate", on_delete=models.SET_NULL, null=True, blank=True
@@ -213,6 +342,8 @@ class EmailCampaign(models.Model):
     custom_content = models.TextField(
         null=True, blank=True, help_text="Optional override HTML/text content"
     )
+    template = models.ForeignKey('Template', on_delete=models.SET_NULL, null=True, blank=True, related_name='campaigns')
+    custom_content = models.TextField(null=True, blank=True, help_text="Optional override HTML/text content")
 
     # Sender
     sender_name = models.CharField(max_length=255, null=True, blank=True)
@@ -223,7 +354,25 @@ class EmailCampaign(models.Model):
     # Audience lists
     contact_lists = models.ManyToManyField("List", related_name="campaigns", blank=True)
     do_not_send_lists = models.ManyToManyField(
-        "List", related_name="excluded_campaigns", blank=True
+        "List", related_name="excluded_campaigns", blank=True)
+    # Recipient configuration
+    sent_lists = models.ManyToManyField('List', related_name='sent_list', blank=True)
+    do_notsent_lists = models.ManyToManyField('List', related_name='do_notsent_lists', blank=True)
+    
+    # Email headers
+    reply_to = models.EmailField(null=True, blank=True)
+    custom_headers = models.JSONField(default=dict, blank=True)
+    
+    # Tracking configuration
+    enable_tracking = models.BooleanField(default=True)
+    track_opens = models.BooleanField(default=True)
+    track_clicks = models.BooleanField(default=True)
+    
+    # Email format
+    email_format = models.CharField(
+        max_length=10,
+        choices=[('html', 'HTML'), ('text', 'Plain Text'), ('both', 'Both')],
+        default='both'
     )
 
     # Extra metadata
@@ -242,6 +391,13 @@ class EmailCampaign(models.Model):
     # Optional helper flags
     selected = models.BooleanField(default=False)
 
+    # Template variables for this campaign
+    template_variables = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="JSON object with template variable values"
+    )
+
     class Meta:
         db_table = "campaigns"
         ordering = ["-created_at"]
@@ -255,8 +411,42 @@ class EmailCampaign(models.Model):
 
         if self.custom_content:
             return self.custom_content
-        elif self.template and self.template.content:
-            return self.template.content
+        
+        # Use template content if available
+        if self.template:
+            # Get the template instance
+            template_obj = self.template
+            
+            # Check if template has html_content
+            if hasattr(template_obj, 'html_content') and template_obj.html_content:
+                html_content = template_obj.html_content
+                
+                # If we have template variables, try to render them
+                if self.template_variables:
+                    try:
+                        from django.template import Template, Context
+                        # Create Template object from the HTML string
+                        template = Template(html_content)
+                        # Create Context with template variables
+                        context = Context(self.template_variables)
+                        # Render the template
+                        rendered_html = template.render(context)
+                        return rendered_html
+                    except Exception as e:
+                        # Log error but return unrendered content as fallback
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error rendering template for campaign {self.id}: {str(e)}")
+                        return html_content
+                else:
+                    # No template variables, return raw HTML
+                    return html_content
+            else:
+                print(f"DEBUG: Template {template_obj.id} has no html_content")
+                return ""
+        
+        # No content found
+        print(f"DEBUG: Campaign {self.id} has no template and no custom_content")
         return ""
 
     def get_email_subject(self):
@@ -281,6 +471,36 @@ class EmailCampaign(models.Model):
         if self.template and getattr(self.template, "subject", None):
             return self.template.subject
         return "No Subject"
+    
+    def get_plain_text_content(self):
+        """Get plain text version"""
+        if self.template:
+            rendered = self.template.render_template(self.template_variables)
+            return rendered['plain_text_content']
+        
+        # Generate from HTML content
+        import re
+        html_content = self.get_email_content()
+        text = re.sub(r'<[^>]*>', ' ', str(html_content))
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+    
+    def get_email_subject(self):
+        """Get email subject with template variables"""
+        from django.template import Template, Context
+        
+        if not self.subject_line:
+            return "No Subject"
+        
+        # Render subject with template variables
+        template = Template(self.subject_line)
+        context = Context(self.template_variables or {})
+        return template.render(context)
+    
+    
+    def get_preview_text(self):
+        """Get preview text for email clients"""
+        return self.preview_text or ''
 
     # --- Metrics (computed from related recipients) ---
     @property
@@ -343,6 +563,36 @@ class EmailCampaign(models.Model):
             "click_rate": round(self.click_rate, 2),
             "delivery_rate": round(self.delivery_rate, 2),
         }
+    
+    def send_test_email(self, test_emails=None):
+        """Send test email for this campaign"""
+        from django.core.mail import EmailMultiAlternatives
+        
+        if test_emails is None:
+            if self.test_email_recipients:
+                test_emails = [email.strip() for email in self.test_email_recipients.split(',')]
+            else:
+                return False, "No test email recipients specified"
+        
+        try:
+            html_content = self.get_email_content()
+            plain_text = self.get_plain_text_content()
+            subject = self.get_email_subject()
+            
+            email = EmailMultiAlternatives(
+                subject=f"[TEST] {subject}",
+                body=plain_text,
+                from_email=self.sender_email or settings.DEFAULT_FROM_EMAIL,
+                to=test_emails
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.send()
+            
+            return True, f"Test email sent to {', '.join(test_emails)}"
+            
+        except Exception as e:
+            return False, str(e)    
+
 
 
 class EmailRecipient(models.Model):
@@ -418,3 +668,9 @@ class EmailRecipient(models.Model):
         self.unsubscribed_at = when if when else models.functions.Now()
         self.status = "unsubscribed"
         self.save(update_fields=["status", "unsubscribed_at"])
+        self.status = 'unsubscribed'
+        self.save(update_fields=['status', 'unsubscribed_at'])
+        
+        
+        
+        

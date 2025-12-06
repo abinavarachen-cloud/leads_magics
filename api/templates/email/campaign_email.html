@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+
+        .email-wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Main wrapper -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5;">
+        <tr>
+            <td align="center">
+
+                <!-- Content container -->
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+                    style="max-width: 600px; background-color: #ffffff;">
+
+                    <!-- Campaign Header -->
+                    <tr>
+                        <td
+                            style="background: #fefefe; padding: 20px; text-align: center; border-bottom: 1px solid #eee;">
+                            <h1 style="color: #f00000; margin: 0; font-size: 24px;">
+                                {{ campaign_name }}
+                            </h1>
+                        </td>
+                    </tr>
+
+                    <!-- Preview Text -->
+                    {% if preview_text %}
+                    <tr>
+                        <td style="padding: 15px 20px; background: #f8f9fa; border-bottom: 1px solid #eee;">
+                            <p style="color: #6c757d; margin: 0; font-style: italic; font-size: 14px;">
+                                Preview: {{ preview_text }}
+                            </p>
+                        </td>
+                    </tr>
+                    {% endif %}
+
+                    <!-- Greeting -->
+                    <!-- <tr>
+                        <td style="padding: 20px;">
+                            <p style="margin-bottom: 20px; color: #333; font-size: 16px;">
+                                Dear {{ recipient_name }},
+                            </p>
+                        </td>
+                    </tr> -->
+
+                    <!-- Campaign Content -->
+                    <tr>
+                        <td style="padding: 0 20px 20px 20px;">
+                            <!-- Template HTML Content goes here -->
+                            <div style="color: #333; line-height: 1.6;">
+                                {{ template_content|safe }}
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 30px; background: #f8f9fa; border-top: 1px solid #eee;">
+                            <!-- Sender info table -->
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                                style="margin-bottom: 15px;">
+                                <tr>
+                                    <td width="50%" align="left" style="color: #495057;">
+                                        <p style="margin: 0 0 5px 0; font-weight: 600; font-size: 14px;">
+                                            {{ sender_name }}
+                                        </p>
+                                    </td>
+                                    <td width="50%" align="right" style="color: #495057;">
+                                        <p style="margin: 0; font-size: 13px;">
+                                            {{ sender_email }}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Copyright & Unsubscribe -->
+                            <p
+                                style="text-align: center; color: #6c757d; font-size: 12px; margin: 0; padding-top: 10px; border-top: 1px solid #dee2e6;">
+                                &copy; {{ current_year }} {{ company_name }}<br>
+                                <a href="{{ unsubscribe_url }}" style="color: #667eea; text-decoration: none;">
+                                    Unsubscribe from this list
+                                </a>
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+
+            </td>
+        </tr>
+    </table>
+
+    <!-- Tracking Pixel -->
+    {% if not is_test %}
+    <img src="{{ tracking_pixel_url }}" width="1" height="1" style="display: none;">
+    {% endif %}
+
+</body>
+
+</html>
