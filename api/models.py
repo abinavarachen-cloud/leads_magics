@@ -30,6 +30,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     date_joined = models.DateTimeField(default=timezone.now)
 
+    groups = models.ManyToManyField(
+    'auth.Group',
+    related_name='customuser_groups',
+    blank=True,
+    )
+
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='customuser_permissions',
+        blank=True,
+    )
+
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []  # No username
 
