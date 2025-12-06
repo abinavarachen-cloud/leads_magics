@@ -11,7 +11,7 @@ from ckeditor.fields import RichTextField
 from ckeditor_uploader.fields import RichTextUploadingField
 from api.manager import CustomUserManager  # we will create this
 from django_ckeditor_5.fields import CKEditor5Field 
-
+import pytz
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -37,7 +37,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
-import pytz
+
 
 
 class Company(models.Model):
@@ -139,41 +139,7 @@ class List(models.Model):
         """Dynamic count of clients in the list"""
         return self.clients.count()
 
-
-
-
-class EmailTemplateCategory(models.Model):
-    name = models.CharField(max_length=255)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
-
-
-class EmailTemplate(models.Model):
-    name = models.CharField(max_length=255)
-    category = models.ForeignKey(
-        EmailTemplateCategory, on_delete=models.CASCADE, null=True, blank=True
-    )
-    subject = models.CharField(max_length=255, null=True, blank=True)
-    content = RichTextUploadingField(null=True, blank=True, config_name="default")
-    created_at = models.DateTimeField(auto_now_add=True)
-    sent_at = models.DateTimeField(null=True, blank=True)
-    total_recipients = models.PositiveIntegerField(default=0)
-    selected = models.BooleanField(default=False, null=True, blank=True)
-
-    def get_email_content(self):
-        if self.content:
-            return self.content
-        return ""
-
-    def get_email_subject(self):
-        return self.subject or "No Subject"
-
-    def __str__(self):
-        return self.name
-
-
+class Template(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('active', 'Active'),
