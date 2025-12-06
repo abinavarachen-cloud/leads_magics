@@ -6,8 +6,13 @@ from django.db.models import Q
 import csv
 from django.http import HttpResponse
 from rest_framework.decorators import action
+from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import *
 from .serializers import *
+
+
+class MyTokenObtainPairView(TokenObtainPairView):
+    serializer_class = MyTokenObtainPairSerializer
 
 # ========== COMPANY API ==========
 class CompanyViewSet(viewsets.ModelViewSet):

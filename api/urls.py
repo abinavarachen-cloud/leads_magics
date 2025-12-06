@@ -23,6 +23,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("login/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path('', include(router.urls)),
     
     # Email Template Categories

@@ -1,7 +1,27 @@
 # serializers.py
 from rest_framework import serializers
 from .models import *
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # Add custom claims inside token if needed
+        token['user_id'] = user.id
+        token['company_id'] = user.company_id
+
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+
+        # # Add extra fields to login response
+        # data['user_id'] = self.user.id
+        # data['company_id'] = self.user.company_id
+        # data['email'] = self.user.email
+        return data
 
 
 
